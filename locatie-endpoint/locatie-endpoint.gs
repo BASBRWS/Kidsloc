@@ -22,6 +22,20 @@
 var TOKEN = 'ZET-HIER-EEN-GEHEIM-WOORD';   // <-- wijzig dit
 var SHEET = 'posities';
 var MAX_AGE_DAYS = 7;                       // oude rijen opruimen
+var DEFAULT_INTERVAL = 5;                   // minuten, tot Baan iets anders zet
+
+// Gewenste meld-interval (minuten). Baan zet het; Kidsloc leest het terug.
+function getInterval() {
+  var v = PropertiesService.getScriptProperties().getProperty('interval');
+  var n = v ? parseInt(v, 10) : DEFAULT_INTERVAL;
+  return (n >= 1 && n <= 120) ? n : DEFAULT_INTERVAL;
+}
+function setInterval_(min) {
+  var n = parseInt(min, 10);
+  if (!(n >= 1 && n <= 120)) return getInterval();
+  PropertiesService.getScriptProperties().setProperty('interval', String(n));
+  return n;
+}
 
 function doPost(e) {
   // OwnTracks post JSON; wij verwachten ?token=... in de URL.
@@ -55,11 +69,16 @@ function doPost(e) {
   } finally {
     lock.releaseLock();
   }
-  return json([]);   // OwnTracks verwacht een (eventueel lege) array terug
+  // Antwoord met het gewenste interval; Kidsloc past zich daarop aan.
+  // (OwnTracks negeert dit onbekende type.)
+  return json([{ _type: 'interval', min: getInterval() }]);
 }
 
 function doGet(e) {
   if (!check(e)) return json({ error: 'unauthorized' });
+  // Baan stelt het interval in of vraagt het op.
+  if (e.parameter.set === 'interval') return json({ ok: true, interval: setInterval_(e.parameter.min) });
+  if (e.parameter.get === 'interval') return json({ interval: getInterval() });
   var sh = sheet();
   var data = sh.getDataRange().getValues();
   var out = [];

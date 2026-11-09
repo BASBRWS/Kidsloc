@@ -41,7 +41,7 @@ import java.util.Locale;
 public class HudView extends View implements Apps.Listener {
 
     // ---- regions / accessibility ids
-    static final int R_NONE = 0, R_RING = 1, R_AGENDA = 2, R_INBOX = 3, R_CMD = 4, R_GEAR = 5, R_BAR = 6, R_ARC = 100;
+    static final int R_NONE = 0, R_RING = 1, R_AGENDA = 2, R_INBOX = 3, R_CMD = 4, R_GEAR = 5, R_BAR = 6, R_INT = 7, R_ARC = 100;
     static final int R_BARID = 1000;   // accessibility id base for pin-bar icons
 
     final MainActivity act;
@@ -54,7 +54,7 @@ public class HudView extends View implements Apps.Listener {
     float u;                       // 1 "dp" relative to a 412 wide screen
     float ts;                      // text scale
     float rcx, rcy, R;             // ring
-    final RectF boxA = new RectF(), boxB = new RectF(), cmd = new RectF(), gear = new RectF();
+    final RectF boxA = new RectF(), boxB = new RectF(), cmd = new RectF(), gear = new RectF(), intChip = new RectF();
     float arcLabelY, acx, acy, AR, arcTop, iconH;
     // pin-bar (eigen rij vastgezette apps boven de baan)
     final RectF barRect = new RectF();
@@ -289,6 +289,7 @@ public class HudView extends View implements Apps.Listener {
         float ch = 50 * u;
         cmd.set(m, H - insetBottom - 18 * u - ch, W - m, H - insetBottom - 18 * u);
         gear.set(W - m - 40 * u, insetTop + 6 * u, W - m + 4 * u, insetTop + 46 * u);
+        intChip.set(m - 4 * u, insetTop + 8 * u, m + 68 * u, insetTop + 42 * u);
         // pin-bar: een strook tussen de kaders en de baan
         refreshBar();
         float barTop = boxA.bottom + 12 * u;
@@ -400,6 +401,7 @@ public class HudView extends View implements Apps.Listener {
         drawArc(cv, acc, deep, boot, t);
         drawCmd(cv, acc);
         drawGear(cv, acc);
+        drawIntChip(cv, acc);
         cv.drawRect(0, 0, W, H, scanPaint);
         if (tour >= 0) drawTour(cv, acc);
         if (animating()) queue();
@@ -732,6 +734,23 @@ public class HudView extends View implements Apps.Listener {
         text(cv, "↑ ALLE APPS", cmd.right - 14 * u, y - 1 * u, 10 * u * ts, Theme.alpha(acc, 170), false, Paint.Align.RIGHT, 0.15f);
     }
 
+    boolean chipVisible() { return peil != null && Peilingen.on(getContext()); }
+
+    /** Kleine chip linksboven: tik om het meld-interval van de kinderen te wisselen. */
+    void drawIntChip(Canvas cv, int acc) {
+        if (!chipVisible()) return;
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(Theme.alpha(Theme.deep(getContext()), 150));
+        cv.drawRoundRect(intChip, 8 * u, 8 * u, p);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(1.3f * u);
+        p.setColor(Theme.alpha(acc, 190));
+        cv.drawRoundRect(intChip, 8 * u, 8 * u, p);
+        p.setStyle(Paint.Style.FILL);
+        text(cv, "↻ " + peil.childInterval + "m", intChip.centerX(), intChip.centerY() + 4.5f * u * ts,
+                12 * u * ts, acc, true, Paint.Align.CENTER, 0.05f);
+    }
+
     void drawGear(Canvas cv, int acc) {
         float cx = gear.centerX(), cy = gear.centerY(), r = 9 * u;
         p.setStyle(Paint.Style.STROKE);
@@ -793,6 +812,7 @@ public class HudView extends View implements Apps.Listener {
 
     // ===================================================================== touch
     int region(float x, float y) {
+        if (chipVisible() && intChip.contains(x, y)) return R_INT;
         if (gear.contains(x, y)) return R_GEAR;
         if (cmd.contains(x, y)) return R_CMD;
         if (boxA.contains(x, y)) return R_AGENDA;
@@ -923,6 +943,13 @@ public class HudView extends View implements Apps.Listener {
     void click(int reg, float x, float y) {
         switch (reg) {
             case R_GEAR: act.openSettings(); break;
+            case R_INT: {
+                int next = peil.nextInterval();
+                peil.pushInterval(next);
+                act.toast("Kinderen melden nu elke " + next + " min");
+                invalidate();
+                break;
+            }
             case R_CMD: act.openDrawer(true); break;
             case R_RING: act.startSafe(new Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS)); break;
             case R_AGENDA:
@@ -980,6 +1007,7 @@ public class HudView extends View implements Apps.Listener {
             case R_INBOX: r.set(boxB); break;
             case R_CMD: r.set(cmd); break;
             case R_GEAR: r.set(gear); break;
+            case R_INT: r.set(intChip); break;
             default: {
                 if (id >= R_BARID) {
                     computeBar();
@@ -1016,6 +1044,7 @@ public class HudView extends View implements Apps.Listener {
             }
             case R_CMD: return "Zoek een app";
             case R_GEAR: return "Instellingen";
+            case R_INT: return "Meld-interval kinderen: elke " + peil.childInterval + " minuten. Tik om te wisselen.";
             default: {
                 if (id >= R_BARID) {
                     int i = id - R_BARID;
@@ -1030,6 +1059,7 @@ public class HudView extends View implements Apps.Listener {
     List<Integer> visibleIds() {
         ArrayList<Integer> l = new ArrayList<>();
         l.add(R_GEAR); l.add(R_RING); l.add(R_AGENDA); l.add(R_INBOX);
+        if (chipVisible()) l.add(R_INT);
         for (int i = 0; i < barItems.size(); i++) l.add(R_BARID + i);
         for (int i = 0; i < Apps.arc.size(); i++) if (Math.abs(rel(i) * STEP) <= MAXA) l.add(R_ARC + i);
         l.add(R_CMD);

@@ -56,10 +56,12 @@ final class Peilingen implements SensorEventListener, LocationListener {
     private final float[] rmap = new float[9];
     private final float[] orient = new float[3];
 
+    static final int[] PRESETS = {1, 5, 15};   // minuten: snel / normaal / spaar
     double myLat, myLon;
     boolean haveMe;
     float azimuth;                 // gesmoord, graden 0..360 (magnetisch)
     volatile List<Kind> kinderen = new ArrayList<>();
+    int childInterval = 5;         // laatst bekende gewenste meld-interval (voor de chip)
     String error;
 
     private boolean running;
@@ -88,6 +90,8 @@ final class Peilingen implements SensorEventListener, LocationListener {
         stop();
         if (!on(c)) return;
         running = true;
+        childInterval = prefs.getInt("childInterval", 5);
+        fetchInterval();
         if (rot != null) sm.registerListener(this, rot, SensorManager.SENSOR_DELAY_UI);
         if (lm != null && locationPermission()) {
             try {
@@ -175,6 +179,63 @@ final class Peilingen implements SensorEventListener, LocationListener {
         kinderen = list;
         recompute();
         signal();
+    }
+
+    /** Volgend preset-interval (cyclisch), voor de chip-tik. */
+    int nextInterval() {
+        int cur = childInterval, idx = 0;
+        for (int i = 0; i < PRESETS.length; i++) if (PRESETS[i] == cur) { idx = i; break; }
+        return PRESETS[(idx + 1) % PRESETS.length];
+    }
+
+    /** Zet het gewenste interval voor de kinderen op afstand (via het endpoint). */
+    void pushInterval(final int min) {
+        childInterval = min;
+        prefs.edit().putInt("childInterval", min).apply();
+        signal();
+        final String base = prefs.getString("feedUrl", "");
+        if (base.isEmpty()) return;
+        new Thread(new Runnable() {
+            @Override public void run() {
+                HttpURLConnection con = null;
+                try {
+                    String sep = base.contains("?") ? "&" : "?";
+                    con = (HttpURLConnection) new URL(base + sep + "set=interval&min=" + min).openConnection();
+                    con.setConnectTimeout(8000); con.setReadTimeout(8000);
+                    con.getResponseCode();
+                } catch (Throwable ignored) {
+                } finally { if (con != null) con.disconnect(); }
+            }
+        }).start();
+    }
+
+    /** Haalt het huidige gewenste interval op zodat de chip klopt. */
+    void fetchInterval() {
+        final String base = prefs.getString("feedUrl", "");
+        if (base.isEmpty()) return;
+        new Thread(new Runnable() {
+            @Override public void run() {
+                HttpURLConnection con = null;
+                try {
+                    String sep = base.contains("?") ? "&" : "?";
+                    con = (HttpURLConnection) new URL(base + sep + "get=interval").openConnection();
+                    con.setConnectTimeout(8000); con.setReadTimeout(8000);
+                    if (con.getResponseCode() == 200) {
+                        StringBuilder sb = new StringBuilder();
+                        BufferedReader r = new BufferedReader(new InputStreamReader(con.getInputStream()));
+                        String line; while ((line = r.readLine()) != null) sb.append(line);
+                        r.close();
+                        final int min = new JSONObject(sb.toString()).optInt("interval", childInterval);
+                        h.post(new Runnable() { @Override public void run() {
+                            childInterval = min;
+                            prefs.edit().putInt("childInterval", min).apply();
+                            signal();
+                        } });
+                    }
+                } catch (Throwable ignored) {
+                } finally { if (con != null) con.disconnect(); }
+            }
+        }).start();
     }
 
     void recompute() {

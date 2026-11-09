@@ -15,11 +15,16 @@ import android.location.LocationManager;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -35,6 +40,7 @@ public class Reporter extends Service implements LocationListener {
     static final int NID = 1;
     LocationManager lm;
     long lastSent;
+    final Handler main = new Handler(Looper.getMainLooper());
 
     @Override public IBinder onBind(Intent i) { return null; }
 
@@ -103,11 +109,12 @@ public class Reporter extends Service implements LocationListener {
                     os.write(o.toString().getBytes("UTF-8"));
                     os.close();
                     int code = con.getResponseCode();
-                    con.getInputStream().close();
+                    String resp = readBody(con.getInputStream());
                     if (code == 200) {
                         lastSent = System.currentTimeMillis();
                         App.prefs(Reporter.this).edit().putLong("lastSent", lastSent).putString("lastErr", "").apply();
                         update("Laatst gedeeld: zojuist");
+                        applyFromResponse(resp);   // Baan kan het interval op afstand wijzigen
                     } else {
                         App.prefs(Reporter.this).edit().putString("lastErr", "endpoint gaf " + code).apply();
                         update("Fout: endpoint gaf " + code);
@@ -118,6 +125,39 @@ public class Reporter extends Service implements LocationListener {
                 } finally { if (con != null) con.disconnect(); }
             }
         }).start();
+    }
+
+    String readBody(InputStream in) {
+        try {
+            StringBuilder sb = new StringBuilder();
+            BufferedReader r = new BufferedReader(new InputStreamReader(in));
+            String line;
+            while ((line = r.readLine()) != null) sb.append(line);
+            r.close();
+            return sb.toString();
+        } catch (Throwable t) { return ""; }
+    }
+
+    /** Past het interval aan dat Baan via het endpoint heeft gezet. */
+    void applyFromResponse(String resp) {
+        if (resp == null || resp.isEmpty()) return;
+        try {
+            JSONArray a = new JSONArray(resp);
+            for (int i = 0; i < a.length(); i++) {
+                JSONObject o = a.getJSONObject(i);
+                if ("interval".equals(o.optString("_type"))) {
+                    final int min = o.optInt("min", App.interval(this));
+                    if (min >= 1 && min <= 120 && min != App.interval(this)) {
+                        App.prefs(this).edit().putInt("interval", min).apply();
+                        main.post(new Runnable() { @Override public void run() {
+                            if (lm != null) { try { lm.removeUpdates(Reporter.this); } catch (Throwable ignored) {} }
+                            start();                       // her-registreer met het nieuwe interval
+                            update("Interval nu " + min + " min");
+                        } });
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
     }
 
     int battery() {
