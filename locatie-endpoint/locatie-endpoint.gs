@@ -110,8 +110,13 @@ function nameFrom(topic, tid) {
 }
 
 function sheet() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) ss = SpreadsheetApp.create('Baan locaties');
+  // Los script heeft geen 'actief' spreadsheet: onthoud het ID, anders maakt
+  // elke melding een nieuw sheet aan.
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty('ssid');
+  var ss = null;
+  if (id) { try { ss = SpreadsheetApp.openById(id); } catch (e) { ss = null; } }
+  if (!ss) { ss = SpreadsheetApp.create('Baan locaties'); props.setProperty('ssid', ss.getId()); }
   var sh = ss.getSheetByName(SHEET);
   if (!sh) {
     sh = ss.insertSheet(SHEET);
