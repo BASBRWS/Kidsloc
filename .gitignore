@@ -1,0 +1,29 @@
+# build-uitvoer
+app/build/
+*.apk
+*.ap_
+*.dex
+*.flat
+
+# ondertekensleutels — NOOIT in de repo (zie README)
+app/keys/*.pem
+app/keys/*.jks
+app/keys/*.keystore
+app/keys/key8.pem
+app/keys/k.pem
+app/keys/cert.pem
+
+# node / python
+node_modules/
+__pycache__/
+*.pyc
+
+# gereedschap-cache
+baan-sdk/
+sdk/
+
+# OS/editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
