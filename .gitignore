@@ -1,17 +1,14 @@
 # build-uitvoer
-app/build/
+**/build/
 *.apk
 *.ap_
 *.dex
 *.flat
 
-# ondertekensleutels — NOOIT in de repo (zie README)
-app/keys/*.pem
-app/keys/*.jks
-app/keys/*.keystore
-app/keys/key8.pem
-app/keys/k.pem
-app/keys/cert.pem
+# ondertekensleutels — NOOIT in de repo
+**/keys/*.pem
+**/keys/*.jks
+**/keys/*.keystore
 
 # node / python
 node_modules/
